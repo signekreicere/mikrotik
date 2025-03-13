@@ -83,6 +83,16 @@ app.post('/logout', (req, res) => {
     res.json({ message: 'Logged out successfully' });
 });
 
+app.get('/users', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT id, email FROM users');
+        res.json({ users: result.rows });
+    } catch (err) {
+        console.error('Error fetching users:', err);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
 app.get('/templates', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM templates WHERE is_archived = FALSE');
@@ -147,6 +157,122 @@ app.post('/archive-template/:id', async (req, res) => {
     }
 });
 
+app.get('/tickets', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT 
+                t.id,
+                t.title,
+                t.status,
+                t.created_at,
+                u_creator.email AS creator_email,
+                u_assignee.email AS assignee_email
+            FROM 
+                tickets t
+            LEFT JOIN 
+                users u_creator ON t.creator_id = u_creator.id
+            LEFT JOIN 
+                users u_assignee ON t.assignee_id = u_assignee.id
+            WHERE 
+                t.status != 'Archived'
+            ORDER BY 
+                t.created_at DESC
+        `);
+
+        res.json({ tickets: result.rows });
+    } catch (err) {
+        console.error('Error fetching tickets:', err);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+app.post('/create-ticket', async (req, res) => {
+    const { title, description, template_id, custom_fields } = req.body;
+
+    if (!title || !template_id) {
+        return res.status(400).json({ message: 'Title and template are required' });
+    }
+
+    try {
+        const { title, description, template_id, custom_fields, assignee_id } = req.body;
+
+        const result = await pool.query(
+            `INSERT INTO tickets (title, description, status, assignee_id, creator_id, template_id, custom_fields) 
+            VALUES ($1, $2, 'Open', $3, $4, $5, $6) RETURNING *`,
+            [title, description, assignee_id || null, 1, template_id, JSON.stringify(custom_fields)]
+        );
+
+
+        res.status(201).json({ ticket: result.rows[0] });
+    } catch (error) {
+        console.error('Error creating ticket:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+app.get('/tickets/:id', async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const result = await pool.query(`
+            SELECT 
+                t.id, t.title, t.description, t.status, t.created_at, t.assignee_id
+                u.email AS creator_email,
+                te.name AS template_name,
+                t.custom_fields
+            FROM tickets t
+            LEFT JOIN users u ON t.creator_id = u.id
+            LEFT JOIN templates te ON t.template_id = te.id
+            WHERE t.id = $1
+        `, [id]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: 'Ticket not found' });
+        }
+
+        const ticket = result.rows[0];
+
+        if (typeof ticket.custom_fields === 'string') {
+            try {
+                ticket.custom_fields = JSON.parse(ticket.custom_fields);
+            } catch {
+                ticket.custom_fields = null;
+            }
+        }
+
+        res.json({ ticket });
+    } catch (err) {
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+app.put('/update-ticket/:id', async (req, res) => {
+    const { id } = req.params;
+    const { title, description, status, assignee_id, custom_fields } = req.body;
+
+    if (!title || !status) {
+        return res.status(400).json({ message: 'Title and status are required' });
+    }
+
+    try {
+        const serializedFields =
+            typeof custom_fields === 'string'
+                ? custom_fields
+                : JSON.stringify(custom_fields);
+
+        const result = await pool.query(
+            `UPDATE tickets
+             SET title = $1, description = $2, status = $3, assignee_id = $4, custom_fields = $5
+             WHERE id = $6
+             RETURNING *`,
+            [title, description, status, assignee_id || null, serializedFields, Number(id)]
+        );
+
+        res.status(200).json({ ticket: result.rows[0] });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+});
 
 app.listen(PORT, () => {
     console.log(`Server launched on http://localhost:${PORT}`);

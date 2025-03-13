@@ -233,3 +233,31 @@
   box-sizing: border-box;
   font-family: inherit
 }
+
+/* tickets modal */
+.ticket-details {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+.ticket-details td {
+  padding: 12px;
+  border: 1px solid #444;
+  color: #ccc;
+}
+
+.ticket-details td:first-child {
+  font-weight: bold;
+  color: #fff;
+  width: 150px;
+  background-color: #333;
+}
+
+.ticket-details tr:nth-child(even) {
+  background-color: #292929;
+}
+
+.ticket-details tr:nth-child(odd) {
+  background-color: #252525;
+}
