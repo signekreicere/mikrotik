@@ -3,10 +3,11 @@ import { useEffect, useState } from 'react';
 function ViewTicketModal({ ticketId, setShowPopup, refreshTickets }) {
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
-    const [status, setStatus] = useState('New');
+    const [status, setStatus] = useState('');
     const [assigneeId, setAssigneeId] = useState('');
     const [customFields, setCustomFields] = useState([]);
     const [users, setUsers] = useState([]);
+    const [statuses, setStatuses] = useState([]);
 
     useEffect(() => {
         const fetchTicket = async () => {
@@ -59,8 +60,25 @@ function ViewTicketModal({ ticketId, setShowPopup, refreshTickets }) {
             }
         };
 
+        const fetchStatuses = async () => {
+            try {
+                const response = await fetch('http://localhost:8000/statuses', {
+                    method: 'GET',
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    setStatuses(data.statuses);
+                }
+            } catch {
+                alert('Failed to load statuses');
+            }
+        };
+
         fetchTicket();
         fetchUsers();
+        fetchStatuses();
     }, [ticketId]);
 
     const handleSave = async () => {
@@ -128,10 +146,11 @@ function ViewTicketModal({ ticketId, setShowPopup, refreshTickets }) {
                         <td><strong>Status:</strong></td>
                         <td>
                             <select value={status} onChange={(e) => setStatus(e.target.value)}>
-                                <option value="New">New</option>
-                                <option value="In Progress">In Progress</option>
-                                <option value="Waiting">Waiting</option>
-                                <option value="Done">Done</option>
+                                {statuses.map(status => (
+                                    <option key={status.id} value={status.name}>
+                                        {status.name}
+                                    </option>
+                                ))}
                             </select>
                         </td>
                     </tr>

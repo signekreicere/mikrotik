@@ -85,7 +85,7 @@ app.post('/logout', (req, res) => {
 
 app.get('/users', async (req, res) => {
     try {
-        const result = await pool.query('SELECT id, email FROM users');
+        const result = await pool.query('SELECT id, email, role FROM users');
         res.json({ users: result.rows });
     } catch (err) {
         console.error('Error fetching users:', err);
@@ -93,9 +93,19 @@ app.get('/users', async (req, res) => {
     }
 });
 
+app.get('/statuses', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM ticket_statuses');
+        res.json({ statuses: result.rows });
+    } catch (err) {
+        console.error('Error fetching statuses:', err);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
 app.get('/templates', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM templates WHERE is_archived = FALSE');
+        const result = await pool.query('SELECT * FROM templates WHERE is_archived = FALSE ORDER BY created_at DESC');
         res.json({ templates: result.rows });
     } catch (err) {
         console.error('Error fetching templates:', err);
@@ -193,23 +203,19 @@ app.get('/templates/:id', async (req, res) => {
 app.get('/tickets', async (req, res) => {
     try {
         const result = await pool.query(`
-            SELECT 
+            SELECT
                 t.id,
                 t.title,
-                t.status,
+                ts.name AS status,
                 t.created_at,
                 u_creator.email AS creator_email,
                 u_assignee.email AS assignee_email
-            FROM 
-                tickets t
-            LEFT JOIN 
-                users u_creator ON t.creator_id = u_creator.id
-            LEFT JOIN 
-                users u_assignee ON t.assignee_id = u_assignee.id
-            WHERE 
-                t.status != 'Archived'
-            ORDER BY 
-                t.created_at DESC
+            FROM tickets t
+                LEFT JOIN users u_creator ON t.creator_id = u_creator.id
+                LEFT JOIN users u_assignee ON t.assignee_id = u_assignee.id
+                LEFT JOIN ticket_statuses ts ON t.status_id = ts.id
+            WHERE t.is_archived = FALSE
+            ORDER BY t.created_at DESC
         `);
 
         res.json({ tickets: result.rows });
@@ -243,7 +249,7 @@ app.post('/create-tickets', async (req, res) => {
         const values = tickets.map(ticket => [
             ticket.title,
             ticket.description,
-            'New',
+            1,
             ticket.assignee_id || null,
             userId,
             ticket.template_id,
@@ -251,7 +257,7 @@ app.post('/create-tickets', async (req, res) => {
         ]);
 
         const query = `
-            INSERT INTO tickets (title, description, status, assignee_id, creator_id, template_id, custom_fields) 
+            INSERT INTO tickets (title, description, status_id, assignee_id, creator_id, template_id, custom_fields) 
             VALUES ${values.map((_, i) => `($${i * 7 + 1}, $${i * 7 + 2}, $${i * 7 + 3}, $${i * 7 + 4}, $${i * 7 + 5}, $${i * 7 + 6}, $${i * 7 + 7})`).join(',')}
             RETURNING *;
         `;
@@ -272,15 +278,16 @@ app.get('/tickets/:id', async (req, res) => {
 
     try {
         const result = await pool.query(
-            `SELECT 
-                t.id, t.title, t.description, t.status, t.created_at, t.assignee_id,
-                u.email AS creator_email,
-                te.name AS template_name,
-                t.custom_fields
-            FROM tickets t
-            LEFT JOIN users u ON t.creator_id = u.id
-            LEFT JOIN templates te ON t.template_id = te.id
-            WHERE t.id = $1`,
+            `SELECT
+                 t.id, t.title, t.description, ts.name AS status, t.created_at, t.assignee_id,
+                 u.email AS creator_email,
+                 te.name AS template_name,
+                 t.custom_fields
+             FROM tickets t
+                  LEFT JOIN users u ON t.creator_id = u.id
+                  LEFT JOIN templates te ON t.template_id = te.id
+                  LEFT JOIN ticket_statuses ts ON t.status_id = ts.id
+             WHERE t.id = $1`,
             [id]
         );
 
@@ -332,6 +339,26 @@ app.put('/update-ticket/:id', async (req, res) => {
 
         res.status(200).json({ ticket: result.rows[0] });
     } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+app.post('/archive-ticket/:id', async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const result = await pool.query(
+            'UPDATE tickets SET is_archived = TRUE WHERE id = $1 RETURNING *',
+            [id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: 'Ticket not found' });
+        }
+
+        res.json({ message: 'Ticket archived successfully' });
+    } catch (err) {
+        console.error('Error archiving ticket:', err);
         res.status(500).json({ message: 'Server error' });
     }
 });

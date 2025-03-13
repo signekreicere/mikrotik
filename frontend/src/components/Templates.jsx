@@ -8,6 +8,7 @@ function Templates() {
     const [templates, setTemplates] = useState([]);
     const [showPopup, setShowPopup] = useState(false);
     const [viewTemplateId, setViewTemplateId] = useState(null);
+    const [userRole, setUserRole] = useState('');
 
     const fetchTemplates = async () => {
         try {
@@ -22,6 +23,22 @@ function Templates() {
             }
         } catch (error) {
             console.error('Failed to fetch templates:', error);
+        }
+    };
+
+    const fetchCurrentUser = async () => {
+        try {
+            const response = await fetch('http://localhost:8000/checkAuth', {
+                method: 'GET',
+                credentials: 'include'
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                setUserRole(data.user.role);
+            }
+        } catch (error) {
+            console.error('Failed to fetch current user:', error);
         }
     };
 
@@ -44,7 +61,13 @@ function Templates() {
 
     useEffect(() => {
         fetchTemplates();
+        fetchCurrentUser();
     }, []);
+
+    const handleLogout = async () => {
+        await fetch('http://localhost:8000/logout', { method: 'POST' });
+        window.location.href = '/login';
+    };
 
     return (
         <div className="dashboard">
@@ -54,14 +77,18 @@ function Templates() {
                     <button className="btn btn-secondary" onClick={() => navigate('/dashboard')}>
                         ← Back to Dashboard
                     </button>
-                    <button className="btn btn-logout" onClick={() => console.log('Logout')}>Logout</button>
+                    <button className="btn btn-logout" onClick={handleLogout}>
+                        Logout
+                    </button>
                 </div>
             </div>
 
             <div className="dashboard-header">
                 <h2>All Templates</h2>
                 <div className="button-group">
-                    <button onClick={() => setShowPopup(true)}>+ Create Template</button>
+                    {userRole === 'admin' && (
+                        <button onClick={() => setShowPopup(true)}>+ Create Template</button>
+                    )}
 
                     {showPopup && (
                         <CreateTemplateModal
@@ -80,24 +107,32 @@ function Templates() {
                         <th>Name</th>
                         <th>Created By</th>
                         <th>Created At</th>
-                        <th></th>
+                        {userRole === 'admin' && <th></th>}
                     </tr>
                     </thead>
                     <tbody>
                     {templates.map((template) => (
-                        <tr key={template.id} onClick={() => setViewTemplateId(template.id)}>
+                        <tr
+                            key={template.id}
+                            onClick={(e) => {
+                                if (!e.target.closest('.delete-icon')) {
+                                    setViewTicketId(template.id);
+                                }
+                            }}
+                            style={{ cursor: "pointer" }}
+                        >
                             <td>{template.id}</td>
                             <td>{template.name}</td>
                             <td>{template.created_by || 'Unknown'}</td>
                             <td>{new Date(template.created_at).toLocaleDateString()}</td>
-                            <td>
-                                    <span
+                            {userRole === 'admin' && (
+                                <td>
+                                    <button
                                         className="delete-icon"
                                         onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleArchiveTemplate(template.id);
-                                        }}
-                                    >
+                                        e.stopPropagation();
+                                        handleArchiveTemplate(template.id);
+                                    }}>
                                         <svg
                                             xmlns="http://www.w3.org/2000/svg"
                                             width="16"
@@ -112,8 +147,9 @@ function Templates() {
                                             <line x1="18" y1="6" x2="6" y2="18"></line>
                                             <line x1="6" y1="6" x2="18" y2="18"></line>
                                         </svg>
-                                    </span>
+                                    </button>
                             </td>
+                            )}
                         </tr>
                     ))}
                     </tbody>
