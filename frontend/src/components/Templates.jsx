@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import CreateTemplateModal from './modals/CreateTemplateModal';
+import ViewTemplateModal from './modals/ViewTemplateModal';
 
 function Templates() {
     const navigate = useNavigate();
     const [templates, setTemplates] = useState([]);
     const [showPopup, setShowPopup] = useState(false);
+    const [viewTemplateId, setViewTemplateId] = useState(null);
 
     const fetchTemplates = async () => {
         try {
@@ -49,7 +51,9 @@ function Templates() {
             <div className="dashboard-header">
                 <h1>Mikrotik TMS</h1>
                 <div className="button-group">
-                    <button className="btn btn-secondary" onClick={() => navigate('/dashboard')}>← Back to Dashboard</button>
+                    <button className="btn btn-secondary" onClick={() => navigate('/dashboard')}>
+                        ← Back to Dashboard
+                    </button>
                     <button className="btn btn-logout" onClick={() => console.log('Logout')}>Logout</button>
                 </div>
             </div>
@@ -81,15 +85,18 @@ function Templates() {
                     </thead>
                     <tbody>
                     {templates.map((template) => (
-                        <tr key={template.id}>
+                        <tr key={template.id} onClick={() => setViewTemplateId(template.id)}>
                             <td>{template.id}</td>
                             <td>{template.name}</td>
                             <td>{template.created_by || 'Unknown'}</td>
                             <td>{new Date(template.created_at).toLocaleDateString()}</td>
-                            <td className="template-actions">
+                            <td>
                                     <span
                                         className="delete-icon"
-                                        onClick={() => handleArchiveTemplate(template.id)}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleArchiveTemplate(template.id);
+                                        }}
                                     >
                                         <svg
                                             xmlns="http://www.w3.org/2000/svg"
@@ -112,6 +119,13 @@ function Templates() {
                     </tbody>
                 </table>
             </div>
+
+            {viewTemplateId && (
+                <ViewTemplateModal
+                    templateId={viewTemplateId}
+                    setShowPopup={() => setViewTemplateId(null)}
+                />
+            )}
         </div>
     );
 }

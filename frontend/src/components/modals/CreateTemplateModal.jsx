@@ -25,6 +25,18 @@ function CreateTemplateModal({ setShowPopup, refreshTemplates }) {
             return;
         }
 
+        for (const field of customFields) {
+            if (!field.name.trim()) {
+                alert('Please fill in all custom field names.');
+                return;
+            }
+
+            if (field.type === 'dropdown' && field.options.length === 0) {
+                alert(`Dropdown field "${field.name}" must have at least one option.`);
+                return;
+            }
+        }
+
         try {
             const response = await fetch('http://localhost:8000/create-template', {
                 method: 'POST',
@@ -115,7 +127,9 @@ function CreateTemplateModal({ setShowPopup, refreshTemplates }) {
                     ))}
                 </div>
 
-                <button onClick={handleAddField}>+ Add Field</button>
+                <button onClick={handleAddField} className="add-field-btn">
+                    + Add Field
+                </button>
 
                 <div className="modal-actions">
                     <button onClick={handleSave} className="btn-save">Save</button>

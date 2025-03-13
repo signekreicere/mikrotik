@@ -157,6 +157,39 @@ app.post('/archive-template/:id', async (req, res) => {
     }
 });
 
+app.get('/templates/:id', async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const result = await pool.query(
+            `SELECT id, name, fields, created_at, created_by, is_archived 
+             FROM templates 
+             WHERE id = $1`,
+            [id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: 'Template not found' });
+        }
+
+        const template = result.rows[0];
+
+        if (typeof template.fields === 'string') {
+            try {
+                template.fields = JSON.parse(template.fields);
+            } catch (err) {
+                console.error('Failed to parse template fields:', err);
+                template.fields = [];
+            }
+        }
+
+        res.json({ template });
+    } catch (err) {
+        console.error('Failed to fetch template:', err);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
 app.get('/tickets', async (req, res) => {
     try {
         const result = await pool.query(`
@@ -186,26 +219,50 @@ app.get('/tickets', async (req, res) => {
     }
 });
 
-app.post('/create-ticket', async (req, res) => {
-    const { title, description, template_id, custom_fields } = req.body;
+app.post('/create-tickets', async (req, res) => {
+    const token = req.cookies.token;
+    if (!token) {
+        return res.status(401).json({ message: 'Not authenticated' });
+    }
 
-    if (!title || !template_id) {
-        return res.status(400).json({ message: 'Title and template are required' });
+    let userId;
+    try {
+        const decoded = jwt.verify(token, SECRET_KEY);
+        userId = decoded.id;
+    } catch (err) {
+        return res.status(401).json({ message: 'Invalid token' });
+    }
+
+    const tickets = req.body;
+
+    if (!tickets || !Array.isArray(tickets) || tickets.length === 0) {
+        return res.status(400).json({ message: 'Invalid ticket data' });
     }
 
     try {
-        const { title, description, template_id, custom_fields, assignee_id } = req.body;
+        const values = tickets.map(ticket => [
+            ticket.title,
+            ticket.description,
+            'New',
+            ticket.assignee_id || null,
+            userId,
+            ticket.template_id,
+            JSON.stringify(ticket.custom_fields)
+        ]);
 
-        const result = await pool.query(
-            `INSERT INTO tickets (title, description, status, assignee_id, creator_id, template_id, custom_fields) 
-            VALUES ($1, $2, 'Open', $3, $4, $5, $6) RETURNING *`,
-            [title, description, assignee_id || null, 1, template_id, JSON.stringify(custom_fields)]
-        );
+        const query = `
+            INSERT INTO tickets (title, description, status, assignee_id, creator_id, template_id, custom_fields) 
+            VALUES ${values.map((_, i) => `($${i * 7 + 1}, $${i * 7 + 2}, $${i * 7 + 3}, $${i * 7 + 4}, $${i * 7 + 5}, $${i * 7 + 6}, $${i * 7 + 7})`).join(',')}
+            RETURNING *;
+        `;
 
+        const params = values.flat();
 
-        res.status(201).json({ ticket: result.rows[0] });
+        const result = await pool.query(query, params);
+
+        res.status(201).json({ tickets: result.rows });
     } catch (error) {
-        console.error('Error creating ticket:', error);
+        console.error('Error creating tickets:', error);
         res.status(500).json({ message: 'Server error' });
     }
 });
@@ -214,17 +271,18 @@ app.get('/tickets/:id', async (req, res) => {
     const { id } = req.params;
 
     try {
-        const result = await pool.query(`
-            SELECT 
-                t.id, t.title, t.description, t.status, t.created_at, t.assignee_id
+        const result = await pool.query(
+            `SELECT 
+                t.id, t.title, t.description, t.status, t.created_at, t.assignee_id,
                 u.email AS creator_email,
                 te.name AS template_name,
                 t.custom_fields
             FROM tickets t
             LEFT JOIN users u ON t.creator_id = u.id
             LEFT JOIN templates te ON t.template_id = te.id
-            WHERE t.id = $1
-        `, [id]);
+            WHERE t.id = $1`,
+            [id]
+        );
 
         if (result.rows.length === 0) {
             return res.status(404).json({ message: 'Ticket not found' });
@@ -267,6 +325,10 @@ app.put('/update-ticket/:id', async (req, res) => {
              RETURNING *`,
             [title, description, status, assignee_id || null, serializedFields, Number(id)]
         );
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ message: 'Ticket not found or no changes made' });
+        }
 
         res.status(200).json({ ticket: result.rows[0] });
     } catch (error) {
