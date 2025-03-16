@@ -1,44 +1,14 @@
 import { useState, useEffect } from 'react';
+import { useTemplates } from '../hooks/useTemplates';
+import { useUsers } from '../hooks/useUsers';
 
 function CreateTicketModal({ setShowPopup, refreshTickets }) {
     const [templateId, setTemplateId] = useState('');
-    const [templates, setTemplates] = useState([]);
-    const [users, setUsers] = useState([]);
+    const { templates, fetchTemplates } = useTemplates();
+    const { users, fetchUsers } = useUsers();
     const [tasks, setTasks] = useState([]);
 
     useEffect(() => {
-        const fetchTemplates = async () => {
-            try {
-                const response = await fetch('http://localhost:8000/templates', {
-                    method: 'GET',
-                    credentials: 'include'
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    setTemplates(data.templates);
-                }
-            } catch {
-                alert('Failed to fetch templates');
-            }
-        };
-
-        const fetchUsers = async () => {
-            try {
-                const response = await fetch('http://localhost:8000/users', {
-                    method: 'GET',
-                    credentials: 'include'
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    setUsers(data.users);
-                }
-            } catch {
-                alert('Failed to fetch users');
-            }
-        };
-
         fetchTemplates();
         fetchUsers();
     }, []);
@@ -112,8 +82,33 @@ function CreateTicketModal({ setShowPopup, refreshTickets }) {
     };
 
     const handleSave = async () => {
-        if (tasks.some(task => !task.title.trim() || !templateId)) {
-            alert('All tasks must have a title and template');
+        const validateFields = () => {
+            const errors = [];
+
+            for (const task of tasks) {
+                if (!task.title?.trim()) {
+                    errors.push('Each task must have a title');
+                }
+                if (!task.description?.trim()) {
+                    errors.push('Each task must have a description');
+                }
+                if (!templateId) {
+                    errors.push('A template must be selected');
+                }
+
+                for (const field of task.customFields) {
+                    if (!field.value?.trim()) {
+                        errors.push(`Custom field "${field.name}" cannot be empty`);
+                    }
+                }
+            }
+
+            return errors.length > 0 ? errors.join('\n') : null;
+        };
+
+        const error = validateFields();
+        if (error) {
+            alert(error);
             return;
         }
 
@@ -124,8 +119,8 @@ function CreateTicketModal({ setShowPopup, refreshTickets }) {
                 credentials: 'include',
                 body: JSON.stringify(
                     tasks.map(task => ({
-                        title: task.title,
-                        description: task.description,
+                        title: task.title.trim(),
+                        description: task.description.trim(),
                         template_id: templateId,
                         assignee_id: task.assigneeId || null,
                         custom_fields: task.customFields.reduce((acc, field) => {
@@ -137,7 +132,7 @@ function CreateTicketModal({ setShowPopup, refreshTickets }) {
             });
 
             if (response.ok) {
-                refreshTickets();
+                await refreshTickets();
                 setShowPopup(false);
             } else {
                 const data = await response.json();
@@ -153,7 +148,6 @@ function CreateTicketModal({ setShowPopup, refreshTickets }) {
             <div className="modal-content scrollable">
                 <h2>Create New Ticket(s)</h2>
 
-                {/* Template Selection */}
                 <select
                     value={templateId}
                     onChange={(e) => handleTemplateSelect(e.target.value)}
@@ -167,10 +161,8 @@ function CreateTicketModal({ setShowPopup, refreshTickets }) {
                     ))}
                 </select>
 
-                {/* Separator */}
                 {templateId && <div className="separator" />}
 
-                {/* Task fields only show if template is selected */}
                 {templateId && tasks.map((task, index) => (
                     <div key={index} className="task-block">
                         <div className="task-header">
@@ -243,7 +235,6 @@ function CreateTicketModal({ setShowPopup, refreshTickets }) {
                     </div>
                 ))}
 
-                {/* ACTION BUTTONS */}
                 {templateId && (
                     <div className="modal-actions">
                         {tasks.length < 10 && (

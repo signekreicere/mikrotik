@@ -1,28 +1,11 @@
 import { useEffect, useState } from 'react';
+import { useTemplates } from '../hooks/useTemplates';
 
 function ViewTemplateModal({ templateId, setShowPopup }) {
-    const [template, setTemplate] = useState(null);
+    const { template, fetchTemplateById } = useTemplates();
 
     useEffect(() => {
-        const fetchTemplate = async () => {
-            try {
-                const response = await fetch(`http://localhost:8000/templates/${templateId}`, {
-                    method: 'GET',
-                    credentials: 'include'
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    setTemplate(data.template);
-                } else {
-                    alert('Failed to fetch template details');
-                }
-            } catch (error) {
-                console.error('Failed to load template:', error);
-            }
-        };
-
-        fetchTemplate();
+        fetchTemplateById(templateId);
     }, [templateId]);
 
     if (!template) return null;

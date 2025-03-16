@@ -18,10 +18,23 @@ const loginLimiter = rateLimit({
     },
 });
 
+const generalLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000,
+    max: 100,
+    message: 'Too many requests, please try again later.',
+});
+
+app.use('/create-tickets', generalLimiter);
+app.use('/update-ticket/:id', generalLimiter);
+app.use('/archive-ticket/:id', generalLimiter);
+app.use('/create-template', generalLimiter);
+app.use('/templates/:id', generalLimiter);
+app.use('/archive-template/:id', generalLimiter);
+
 app.use(cors({
     origin: 'http://localhost:5173',
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
@@ -105,14 +118,13 @@ app.get('/statuses', async (req, res) => {
 
 app.get('/templates', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM templates WHERE is_archived = FALSE ORDER BY created_at DESC');
+        const result = await pool.query('SELECT * FROM templates ORDER BY created_at DESC');
         res.json({ templates: result.rows });
     } catch (err) {
         console.error('Error fetching templates:', err);
         res.status(500).json({ message: 'Server error' });
     }
 });
-
 
 app.post('/create-template', async (req, res) => {
     const token = req.cookies.token;
@@ -209,12 +221,14 @@ app.get('/tickets', async (req, res) => {
                 ts.name AS status,
                 t.created_at,
                 u_creator.email AS creator_email,
-                u_assignee.email AS assignee_email
+                u_assignee.email AS assignee_email,
+                te.name AS template_name,
+                t.is_archived
             FROM tickets t
                 LEFT JOIN users u_creator ON t.creator_id = u_creator.id
                 LEFT JOIN users u_assignee ON t.assignee_id = u_assignee.id
                 LEFT JOIN ticket_statuses ts ON t.status_id = ts.id
-            WHERE t.is_archived = FALSE
+                LEFT JOIN templates te ON t.template_id = te.id
             ORDER BY t.created_at DESC
         `);
 
@@ -313,10 +327,15 @@ app.get('/tickets/:id', async (req, res) => {
 
 app.put('/update-ticket/:id', async (req, res) => {
     const { id } = req.params;
-    const { title, description, status, assignee_id, custom_fields } = req.body;
+    const { title, description, status_id, assignee_id, custom_fields } = req.body;
 
-    if (!title || !status) {
-        return res.status(400).json({ message: 'Title and status are required' });
+    if (
+        !title?.trim() ||
+        !status_id ||
+        typeof status_id !== 'number' ||
+        (custom_fields && typeof custom_fields !== 'object')
+    ) {
+        return res.status(400).json({ message: 'Invalid input: Make sure all fields are properly filled out' });
     }
 
     try {
@@ -327,10 +346,10 @@ app.put('/update-ticket/:id', async (req, res) => {
 
         const result = await pool.query(
             `UPDATE tickets
-             SET title = $1, description = $2, status = $3, assignee_id = $4, custom_fields = $5
+             SET title = $1, description = $2, status_id = $3, assignee_id = $4, custom_fields = $5
              WHERE id = $6
              RETURNING *`,
-            [title, description, status, assignee_id || null, serializedFields, Number(id)]
+            [title, description, status_id, assignee_id || null, serializedFields, Number(id)]
         );
 
         if (result.rowCount === 0) {

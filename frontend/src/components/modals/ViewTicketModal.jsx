@@ -1,96 +1,92 @@
 import { useEffect, useState } from 'react';
+import { useUsers } from '../hooks/useUsers';
+import { useTickets } from '../hooks/useTickets';
+import { useStatuses } from '../hooks/useStatuses';
 
 function ViewTicketModal({ ticketId, setShowPopup, refreshTickets }) {
+    const { users, fetchUsers } = useUsers();
+    const { ticket, fetchTicketById } = useTickets();
+    const { statuses, fetchStatuses } = useStatuses();
+
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [status, setStatus] = useState('');
     const [assigneeId, setAssigneeId] = useState('');
     const [customFields, setCustomFields] = useState([]);
-    const [users, setUsers] = useState([]);
-    const [statuses, setStatuses] = useState([]);
 
     useEffect(() => {
-        const fetchTicket = async () => {
-            try {
-                const response = await fetch(`http://localhost:8000/tickets/${ticketId}`, {
-                    method: 'GET',
-                    credentials: 'include'
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-
-                    setTitle(data.ticket.title);
-                    setDescription(data.ticket.description);
-                    setStatus(data.ticket.status);
-                    setAssigneeId(data.ticket.assignee_id ? String(data.ticket.assignee_id) : '');
-
-                    if (data.ticket.custom_fields && typeof data.ticket.custom_fields === 'object') {
-                        setCustomFields(
-                            Object.entries(data.ticket.custom_fields).map(([name, value]) => ({
-                                name,
-                                value,
-                                type: typeof value === 'string' ? 'text' : 'dropdown',
-                                options: []
-                            }))
-                        );
-                    } else {
-                        setCustomFields([]);
-                    }
-                } else {
-                    alert('Failed to fetch ticket details');
-                }
-            } catch {
-                alert('Failed to load ticket');
-            }
-        };
-
-        const fetchUsers = async () => {
-            try {
-                const response = await fetch('http://localhost:8000/users', {
-                    method: 'GET',
-                    credentials: 'include'
-                });
-                if (response.ok) {
-                    const data = await response.json();
-                    setUsers(data.users);
-                }
-            } catch {
-                alert('Failed to load users');
-            }
-        };
-
-        const fetchStatuses = async () => {
-            try {
-                const response = await fetch('http://localhost:8000/statuses', {
-                    method: 'GET',
-                    credentials: 'include'
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    setStatuses(data.statuses);
-                }
-            } catch {
-                alert('Failed to load statuses');
-            }
-        };
-
-        fetchTicket();
+        fetchTicketById(ticketId);
         fetchUsers();
         fetchStatuses();
     }, [ticketId]);
 
+    useEffect(() => {
+        if (ticket) {
+            setTitle(ticket.title || '');
+            setDescription(ticket.description || '');
+            setStatus(ticket.status || '');
+            setAssigneeId(ticket.assignee_id ? String(ticket.assignee_id) : '');
+
+            if (ticket.custom_fields && typeof ticket.custom_fields === 'object') {
+                setCustomFields(
+                    Object.entries(ticket.custom_fields).map(([name, value]) => ({
+                        name,
+                        value,
+                        type: typeof value === 'string' ? 'text' : 'dropdown',
+                        options: []
+                    }))
+                );
+            } else {
+                setCustomFields([]);
+            }
+        }
+    }, [ticket]);
+
+    if (!ticket) return null;
+
     const handleSave = async () => {
+        const validateFields = () => {
+            const errors = [];
+
+            if (!title?.trim()) errors.push('Title is required');
+            if (!description?.trim()) errors.push('Description is required');
+            if (!status) errors.push('Status is required');
+
+            const selectedStatusId = statuses.find(
+                s => s.name.toLowerCase().trim() === status.toLowerCase().trim()
+            )?.id || null;
+
+            if (!selectedStatusId) errors.push('Invalid status');
+
+            for (const field of customFields) {
+                if (!field.value?.trim()) {
+                    errors.push(`Custom field "${field.name}" cannot be empty`);
+                }
+            }
+
+            return errors.length > 0 ? errors.join('\n') : null;
+        };
+
+        const error = validateFields();
+        if (error) {
+            alert(error);
+            return;
+        }
+
+        const selectedStatusId = statuses.find(
+            s => s.name === status
+        )?.id || null;
+
+
         try {
             const response = await fetch(`http://localhost:8000/update-ticket/${ticketId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
                 body: JSON.stringify({
-                    title,
-                    description,
-                    status,
+                    title: title.trim(),
+                    description: description.trim(),
+                    status_id: selectedStatusId,
                     assignee_id: assigneeId || null,
                     custom_fields: customFields.reduce((acc, field) => {
                         acc[field.name] = field.value;
@@ -100,13 +96,13 @@ function ViewTicketModal({ ticketId, setShowPopup, refreshTickets }) {
             });
 
             if (response.ok) {
+                await refreshTickets();
                 setShowPopup(false);
-                refreshTickets();
             } else {
                 const data = await response.json();
                 alert(data.message);
             }
-        } catch {
+        } catch (error) {
             alert('Failed to update ticket');
         }
     };
@@ -162,7 +158,7 @@ function ViewTicketModal({ ticketId, setShowPopup, refreshTickets }) {
                                 onChange={(e) => setAssigneeId(e.target.value)}
                             >
                                 <option value="">Unassigned</option>
-                                {users.map((user) => (
+                                {users.map(user => (
                                     <option key={user.id} value={user.id}>
                                         {user.email}
                                     </option>
@@ -181,7 +177,7 @@ function ViewTicketModal({ ticketId, setShowPopup, refreshTickets }) {
                                             handleCustomFieldChange(index, e.target.value)
                                         }
                                     >
-                                        {field.options.map((option) => (
+                                        {field.options.map(option => (
                                             <option key={option} value={option}>
                                                 {option}
                                             </option>
