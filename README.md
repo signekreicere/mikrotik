@@ -48,15 +48,23 @@ Use Docker Compose to build and start the containers:
 ```bash
 docker-compose up --build
 ```
+Or just start containers if you have already built them
+```bash
+docker-compose up -d
+```
 
 ---
 
 ### 5. **Apply the database schema**
 The `dump.sql` file is included to initialize the database. To import it, follow these steps:
 
-1. First, find the container name:
+1. Copy the dump file into the container
 ```bash
-docker ps
+docker cp ./dump.sql mikrotik-db-1:/dump.sql
+```
+2. Import the database schema
+```bash
+docker exec -it mikrotik-db-1 psql -U user -d taskdb -f /dump.sql
 ```
 
 ---
